@@ -158,6 +158,18 @@ def die(msg):
         sys.stderr.write(msg + "\n")
         sys.exit(1)
 
+def iconv(str, incoming):
+    charset = gitConfig('git-p4.charset')
+    if charset:
+        try:
+            if incoming:
+                str = str.decode(charset, 'replace').encode('utf8', 'replace')
+            else:
+                str = str.decode('utf8', 'replace').encode(charset, 'replace')
+        except:
+            pass
+    return str
+
 def prompt(prompt_text):
     """ Prompt the user to choose one of the choices
 
@@ -527,6 +539,10 @@ def p4_describe(change, shelved=False):
     if "time" not in d:
         die("p4 describe -s %d returned no \"time\": %s" % (change, str(d)))
 
+    for k in d:
+        d[k] = iconv(d[k], True)
+        # print(d[k])
+
     return d
 
 #
@@ -761,6 +777,7 @@ def p4CmdList(cmd, stdin=None, stdin_mode='w+b', cb=None, skip_info=False,
 
     result = []
     try:
+        charset = gitConfig('git-p4.charset')
         while True:
             entry = marshal.load(p4.stdout)
             if bytes is not str:
@@ -771,7 +788,10 @@ def p4CmdList(cmd, stdin=None, stdin_mode='w+b', cb=None, skip_info=False,
                 for key, value in entry.items():
                     key = key.decode()
                     if isinstance(value, bytes) and not (key in ('data', 'path', 'clientFile') or key.startswith('depotFile')):
-                        value = value.decode()
+                        if charset:
+                            value = value.decode(encoding=charset, errors='replace')
+                        else:
+                            value = value.decode()
                     decoded_entry[key] = value
                 # Parse out data if it's an error response
                 if decoded_entry.get('code') == 'error' and 'data' in decoded_entry:
@@ -1499,8 +1519,12 @@ class P4UserMap:
         for output in p4CmdList("users"):
             if "User" not in output:
                 continue
-            self.users[output["User"]] = output["FullName"] + " <" + output["Email"] + ">"
-            self.emails[output["Email"]] = output["User"]
+            user = iconv(output["User"], True)
+            fullname = iconv(output["FullName"], True)
+            email = iconv(output["Email"], True)
+            self.users[user] = fullname + " <" + email + ">"
+            self.emails[email] = user
+
 
         mapUserConfigRegex = re.compile(r"^\s*(\S+)\s*=\s*(.+)\s*<(\S+)>\s*$", re.VERBOSE)
         for mapUserConfig in gitConfigList("git-p4.mapUser"):
@@ -2241,6 +2265,7 @@ class P4Submit(Command, P4UserMap):
                     submitTemplate = message[:message.index(separatorLine)]
                 else:
                     submitTemplate = message
+                submitTemplate = iconv(submitTemplate, False)
 
                 if len(submitTemplate.strip()) == 0:
                     print("Changelist is empty, aborting this changelist.")
@@ -3147,7 +3172,7 @@ class P4Sync(Command, P4UserMap):
                 else:
                     fileArg = f['path'] + encode_text_stream('#{}'.format(f['rev']))
 
-                fileArgs.append(fileArg)
+                fileArgs.append(iconv(fileArg, False))
 
             p4CmdList(["-x", "-", "print"],
                       stdin=fileArgs,
@@ -3252,6 +3277,8 @@ class P4Sync(Command, P4UserMap):
                     'type': record['headType']})
 
     def commit(self, details, files, branch, parent = "", allow_empty=False):
+        # for k in details:
+        #     details[k] = iconv(details[k], True)
         epoch = details["time"]
         author = details["user"]
         jobs = self.extractJobsFromCommit(details)
