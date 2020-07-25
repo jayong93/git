@@ -194,6 +194,8 @@ if bytes is not str:
     # For python3, always encode and decode as appropriate
     def decode_text_stream(s):
         return s.decode() if isinstance(s, bytes) else s
+    def decode_text_stream_encoding(s, e):
+        return s.decode(e, 'replace') if isinstance(s, bytes) else s
     def encode_text_stream(s):
         return s.encode() if isinstance(s, str) else s
 else:
@@ -303,6 +305,7 @@ def p4_write_pipe(c, stdin):
     real_cmd = p4_build_cmd(c)
     if bytes is not str and isinstance(stdin, str):
         stdin = encode_text_stream(stdin)
+        stdin = iconv(stdin, False)
     return write_pipe(real_cmd, stdin)
 
 def read_pipe_full(c):
@@ -335,6 +338,17 @@ def read_pipe(c, ignore_error=False, raw=False):
         out = decode_text_stream(out)
     return out
 
+def read_pipe_encoding(c, enc, ignore_error=False, raw=False):
+    (retcode, out, err) = read_pipe_full(c)
+    if retcode != 0:
+        if ignore_error:
+            out = ""
+        else:
+            die('Command failed: %s\nError: %s' % (str(c), err))
+    if not raw:
+        out = decode_text_stream_encoding(out, enc)
+    return out
+
 def read_pipe_text(c):
     """ Read output from a command with trailing whitespace stripped.
         On error, returns None.
@@ -347,7 +361,11 @@ def read_pipe_text(c):
 
 def p4_read_pipe(c, ignore_error=False, raw=False):
     real_cmd = p4_build_cmd(c)
-    return read_pipe(real_cmd, ignore_error, raw=raw)
+    charset = gitConfig('git-p4.charset')
+    if charset:
+        return read_pipe_encoding(real_cmd, charset, ignore_error, raw)
+    else:
+        return read_pipe(real_cmd, ignore_error, raw=raw)
 
 def read_pipe_lines(c):
     if verbose:
