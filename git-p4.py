@@ -2018,7 +2018,7 @@ class P4Submit(Command, P4UserMap):
             if is_link and expect_link:
                 newdiff += "+%s\n" % os.readlink(newFile)
             else:
-                f = open(newFile, "r")
+                f = open(newFile, "r", errors="replace")
                 for line in f.readlines():
                     newdiff += "+" + line
                 f.close()
